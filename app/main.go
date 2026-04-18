@@ -106,18 +106,24 @@ func main() {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
 		}
-		
+
 		var b strings.Builder
 		w := zlib.NewWriter(&b)
-		
+
 		objectContents := header + string(content)
 		if _, err := w.Write([]byte(objectContents)); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing to zlib writer: %s\n", err)
 			os.Exit(1)
 		}
-		
+
 		if err := w.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error closing zlib writer: %s\n", err)
+			os.Exit(1)
+		}
+
+		objectPath := fmt.Sprintf(".git/objects/%s/%s", sha[:2], sha[2:])
+		if err := os.WriteFile(objectPath, []byte(b.String()), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing object file: %s\n", err)
 			os.Exit(1)
 		}
 	
