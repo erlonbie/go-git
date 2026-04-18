@@ -2,6 +2,8 @@ package main
 
 import (
 	"compress/zlib"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -44,6 +46,13 @@ func main() {
 			os.Exit(1)
 		}
 
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error closing file: %s\n", err)
+				os.Exit(1)
+			}
+		}()
+
 		reader := io.Reader(file)
 
 		zlibReader, err := zlib.NewReader(reader)
@@ -65,6 +74,52 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error closing zlib reader: %s\n", err)
 			os.Exit(1)
 		}
+	case "hash-object":
+		fileName := os.Args[3]
+		file, err := os.Open(fileName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening file: %s\n", err)
+			os.Exit(1)
+		}
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error closing file: %s\n", err)
+				os.Exit(1)
+			}
+		}()
+		
+		hasher := sha1.New()
+		
+		if _, err := io.Copy(hasher, file); err != nil {
+			fmt.Fprintf(os.Stderr, "Error while copying file to hasher: %s\n", err)
+			os.Exit(1)
+		}
+
+		sha := hex.EncodeToString(hasher.Sum(nil))
+		for _, dir := range []string{".git/objects/"+sha[:2]} {
+			if err := os.MkdirAll(dir, 0755); err != nil {
+				fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+			}
+		}
+
+		objectContents := fmt.Sprintf("blob %d\x00%s", hasher.Size(), string(hasher.Sum(nil)))
+		var b strings.Builder
+		w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating zlib writer: %s\n", err)
+			os.Exit(1)
+		}
+	
+		if _, err := w.Write([]byte(objectContents)); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing to zlib writer: %s\n", err)
+			os.Exit(1)
+		}
+
+		if err := w.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error closing zlib writer: %s\n", err)
+			os.Exit(1)
+		}
+	
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
