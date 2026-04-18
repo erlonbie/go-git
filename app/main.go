@@ -88,33 +88,34 @@ func main() {
 			}
 		}()
 		
-		hasher := sha1.New()
-		
-		if _, err := io.Copy(hasher, file); err != nil {
-			fmt.Fprintf(os.Stderr, "Error while copying file to hasher: %s\n", err)
-			os.Exit(1)
-		}
-
-		sha := hex.EncodeToString(hasher.Sum(nil))
-		for _, dir := range []string{".git/objects/"+sha[:2]} {
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
-			}
-		}
-
-		objectContents := fmt.Sprintf("blob %d\x00%s", hasher.Size(), string(hasher.Sum(nil)))
-		var b strings.Builder
-		w, err := zlib.NewWriterLevel(&b, zlib.BestCompression)
+		content, err := io.ReadAll(file)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating zlib writer: %s\n", err)
+			fmt.Fprintf(os.Stderr, "Error reading file: %s\n", err)
 			os.Exit(1)
 		}
-	
+		
+		header := fmt.Sprintf("blob %d\x00", len(content))
+		hasher := sha1.New()
+		hasher.Write([]byte(header))
+		hasher.Write(content)
+		
+		sha := hex.EncodeToString(hasher.Sum(nil))
+		fmt.Println(sha)
+		
+		dir := ".git/objects/" + sha[:2]
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+		}
+		
+		var b strings.Builder
+		w := zlib.NewWriter(&b)
+		
+		objectContents := header + string(content)
 		if _, err := w.Write([]byte(objectContents)); err != nil {
 			fmt.Fprintf(os.Stderr, "Error writing to zlib writer: %s\n", err)
 			os.Exit(1)
 		}
-
+		
 		if err := w.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error closing zlib writer: %s\n", err)
 			os.Exit(1)
