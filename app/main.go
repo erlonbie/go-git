@@ -1,8 +1,11 @@
 package main
 
 import (
+	"compress/zlib"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 )
 
 // Usage: your_program.sh <command> <arg1> <arg2> ...
@@ -31,7 +34,37 @@ func main() {
 		}
 
 		fmt.Println("Initialized git directory")
+	case "cat-file":
+		sha := os.Args[3]
+		path := fmt.Sprintf(".git/objects/%s/%s", sha[:2], sha[2:])
 
+		file, err := os.Open(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening file: %s\n", err)
+			os.Exit(1)
+		}
+
+		reader := io.Reader(file)
+
+		zlibReader, err := zlib.NewReader(reader)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating zlib reader: %s\n", err)
+			os.Exit(1)
+		}
+
+		stream, err := io.ReadAll(zlibReader)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading zlib stream: %s\n", err)
+			os.Exit(1)
+		}
+
+		parts := strings.Split(string(stream), "\x00")
+		fmt.Print(parts[1])
+
+		if err := zlibReader.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error closing zlib reader: %s\n", err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
