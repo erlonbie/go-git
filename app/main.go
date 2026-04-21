@@ -157,8 +157,8 @@ func main() {
 			os.Exit(1)
 		}
 
-		parts := strings.Split(string(stream), "\x00")
-		data := []byte(parts[1])
+		nullIndex := strings.Index(string(stream), "\x00")
+		data := stream[nullIndex+1:]
 		i := 0
 
 		for i < len(data) {
