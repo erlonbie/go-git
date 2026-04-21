@@ -158,13 +158,44 @@ func main() {
 		}
 
 		parts := strings.Split(string(stream), "\x00")
-		lines := strings.Split(parts[1], "\n")
-		for _, line := range lines {
-			if line != "" {
-				fmt.Println(line)
+		data := []byte(parts[1])
+		i := 0
+
+		for i < len(data) {
+			spaceIndex := -1
+			for j := i; j < len(data); j++ {
+				if data[j] == ' ' {
+					spaceIndex = j
+					break
+				}
+			}
+
+			mode := string(data[i:spaceIndex])
+			i = spaceIndex + 1
+
+			nullIndex := -1
+			for j := i; j < len(data); j++ {
+				if data[j] == 0 {
+					nullIndex = j
+					break
+				}
+			}
+
+			name := string(data[i:nullIndex])
+			i = nullIndex + 1
+
+			shaBytes := data[i : i+20]
+			i += 20
+
+			sha := fmt.Sprintf("%x", shaBytes)
+
+			if os.Args[2] == "--name-only" {
+				fmt.Println(name)
+			} else {
+				fmt.Printf("%s %s %s\n", mode, sha, name)
 			}
 		}
-	
+
 		if err := zlibReader.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "Error closing zlib reader: %s\n", err)
 			os.Exit(1)
