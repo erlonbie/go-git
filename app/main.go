@@ -126,7 +126,50 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error writing object file: %s\n", err)
 			os.Exit(1)
 		}
+	case "ls-tree":
+		sha := os.Args[3]
+		path := fmt.Sprintf(".git/objects/%s/%s", sha[:2], sha[2:])
+
+		file, err := os.Open(path)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error opening file: %s\n", err)
+			os.Exit(1)
+		}
+
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error closing file: %s\n", err)
+				os.Exit(1)
+			}
+		}()
+
+		reader := io.Reader(file)
 	
+		zlibReader, err := zlib.NewReader(reader)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating zlib reader: %s\n", err)
+			os.Exit(1)
+		}
+
+		stream, err := io.ReadAll(zlibReader)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading zlib stream: %s\n", err)
+			os.Exit(1)
+		}
+
+		parts := strings.Split(string(stream), "\x00")
+		lines := strings.Split(parts[1], "\n")
+		for _, line := range lines {
+			if line != "" {
+				fmt.Println(line)
+			}
+		}
+	
+		if err := zlibReader.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error closing zlib reader: %s\n", err)
+			os.Exit(1)
+		}
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
