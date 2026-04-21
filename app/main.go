@@ -200,6 +200,59 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error closing zlib reader: %s\n", err)
 			os.Exit(1)
 		}
+	case "write-tree":
+		entries := os.Args[2:]
+
+		var stringBuilder strings.Builder
+		for _, entry := range entries {
+			parts := strings.SplitN(entry, " ", 3)
+			mode := parts[0]
+			name := parts[1]
+			sha := parts[2]
+
+			shaBytes, err := hex.DecodeString(sha)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error decoding SHA: %s\n", err)
+				os.Exit(1)
+			}
+
+			fmt.Fprintf(&stringBuilder, "%s %s\x00", mode, name)
+			stringBuilder.Write(shaBytes)
+		}
+
+		content := stringBuilder.String()
+		header := fmt.Sprintf("tree %d\x00", len(content))
+		hasher := sha1.New()
+		hasher.Write([]byte(header))
+		hasher.Write([]byte(content))
+
+		sha := hex.EncodeToString(hasher.Sum(nil))
+		fmt.Println(sha)
+
+		dir := ".git/objects/" + sha[:2]
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			fmt.Fprintf(os.Stderr, "Error creating directory: %s\n", err)
+		}
+
+		var zlibBuilder strings.Builder
+		zlibWriter := zlib.NewWriter(&zlibBuilder)
+
+		objectContents := header + content
+		if _, err := zlibWriter.Write([]byte(objectContents)); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing to zlib writer: %s\n", err)
+			os.Exit(1)
+		}
+
+		if err := zlibWriter.Close(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error closing zlib writer: %s\n", err)
+			os.Exit(1)
+		}
+
+		objectPath := fmt.Sprintf(".git/objects/%s/%s", sha[:2], sha[2:])
+		if err := os.WriteFile(objectPath, []byte(zlibBuilder.String()), 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "Error writing object file: %s\n", err)
+			os.Exit(1)
+		}
 
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
