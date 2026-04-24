@@ -1,23 +1,28 @@
 package commands
 
 import (
-	"crypto/sha1"
 	"fmt"
+	"os"
+	"time"
 )
 
 func CommitTree(treeSha, parentSha, message string) {
-	commitContent := fmt.Sprintf(
-		"tree %s\nparent %s\nauthor John Doe <john@example.com> 1700000000 +0000\ncommitter John Doe <john@example.com> 1700000000 +0000\n\n%s",
-		treeSha,
-		parentSha,
-		message,
-	)
+	now := time.Now().Unix()
+	author := fmt.Sprintf("John Doe <john@example.com> %d +0000", now)
 
-	header := fmt.Sprintf("commit %d\x00", len(commitContent))
-	fullContent := append([]byte(header), []byte(commitContent)...)
+	content := fmt.Sprintf("tree %s\n", treeSha)
+	if parentSha != "" {
+		content += fmt.Sprintf("parent %s\n", parentSha)
+	}
+	content += fmt.Sprintf("author %s\n", author)
+	content += fmt.Sprintf("committer %s\n", author)
+	content += fmt.Sprintf("\n%s\n", message)
 
-	hasher := sha1.New()
-	hasher.Write(fullContent)
-	sha := fmt.Sprintf("%x", hasher.Sum(nil))
+	sha, err := WriteObject("commit", []byte(content))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error writing commit: %s\n", err)
+		os.Exit(1)
+	}
+
 	fmt.Println(sha)
 }

@@ -46,13 +46,22 @@ func main() {
 		commands.WriteTreeCmd()
 
 	case "commit-tree":
-		if len(os.Args) < 7 {
-			fmt.Fprintf(os.Stderr, "usage: commit-tree <tree_sha> -p <commit_sha> -m <message>\n")
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "usage: mygit commit-tree <tree_sha> [-p <parent_sha>] -m <message>\n")
 			os.Exit(1)
 		}
 		treeSha := os.Args[2]
-		parentSha := os.Args[4]
-		message := os.Args[6]
+		var parentSha, message string
+
+		for i := 3; i < len(os.Args); i++ {
+			if os.Args[i] == "-p" && i+1 < len(os.Args) {
+				parentSha = os.Args[i+1]
+				i++
+			} else if os.Args[i] == "-m" && i+1 < len(os.Args) {
+				message = os.Args[i+1]
+				i++
+			}
+		}
 		commands.CommitTree(treeSha, parentSha, message)
 
 	default:
