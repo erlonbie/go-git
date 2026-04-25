@@ -64,6 +64,15 @@ func main() {
 		}
 		commands.CommitTree(treeSha, parentSha, message)
 
+	case "clone":
+		if len(os.Args) < 4 {
+			fmt.Fprintf(os.Stderr, "usage: mygit clone <url> <directory>\n")
+			os.Exit(1)
+		}
+		repoURL := os.Args[2]
+		targetDir := os.Args[3]
+		commands.Clone(repoURL, targetDir)
+
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown command %s\n", command)
 		os.Exit(1)
