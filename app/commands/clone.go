@@ -64,6 +64,50 @@ func Clone(repoURL, targetDir string) {
 		fmt.Fprintf(os.Stderr, "Could not find the HEAD reference on the server.\n")
 		os.Exit(1)
 	}
+
+	packURL := fmt.Sprintf("%s/git-upload-pack", repoURL)
+
+	requestBody := fmt.Sprintf("0032want %s\n00000009done\n", headSha)
+
+	req, err := http.NewRequest("POST", packURL, bytes.NewBufferString(requestBody))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating request for packfile: %v\n", err)
+		os.Exit(1)
+	}
+	req.Header.Set("Content-Type", "application/x-git-upload-pack-request")
+
+	client := &http.Client{}
+	packResp, err := client.Do(req)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error requesting packfile: %v\n", err)
+		os.Exit(1)
+	}
+	defer packResp.Body.Close()
+
+	if packResp.StatusCode != http.StatusOK {
+		fmt.Fprintf(os.Stderr, "HTTP error downloading packfile: %s\n", packResp.Status)
+		os.Exit(1)
+	}
+
+	packData, err := io.ReadAll(packResp.Body)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading packfile body: %v\n", err)
+		os.Exit(1)
+	}
+
+	packIndex := bytes.Index(packData, []byte("PACK"))
+	if packIndex == -1 {
+		fmt.Fprintf(os.Stderr, "'PACK' signature not found in response\n")
+		os.Exit(1)
+	}
+
+	packfileContent := packData[packIndex:]
+
+	err = os.MkdirAll(".git/objects/pack", 0755)
+	if err := os.WriteFile(".git/objects/pack/downloaded.pack", packfileContent, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "Error saving packfile to disk: %v\n", err)
+		os.Exit(1)
+	}
 }
 
 func parsePktLines(data []byte) []string {
