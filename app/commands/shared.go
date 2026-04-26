@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 )
@@ -109,4 +110,39 @@ func WriteObject(objType string, content []byte) (string, error) {
 	}
 
 	return sha, nil
+}
+
+func ReadObject(sha string) (string, []byte, error) {
+	path := filepath.Join(".git", "objects", sha[:2], sha[2:])
+	file, err := os.Open(path)
+	if err != nil {
+		return "", nil, fmt.Errorf("error opening object file: %w", err)
+	}
+	defer file.Close()
+
+	zlibReader, err := zlib.NewReader(file)
+	if err != nil {
+		return "", nil, fmt.Errorf("error creating zlib reader: %w", err)
+	}
+	defer zlibReader.Close()
+
+	stream, err := io.ReadAll(zlibReader)
+	if err != nil {
+		return "", nil, fmt.Errorf("error reading zlib stream: %w", err)
+	}
+
+	nullIndex := bytes.IndexByte(stream, 0)
+	if nullIndex == -1 {
+		return "", nil, fmt.Errorf("invalid object format: missing null terminator")
+	}
+
+	headerParts := bytes.Split(stream[:nullIndex], []byte(" "))
+	if len(headerParts) < 2 {
+		return "", nil, fmt.Errorf("invalid object format: missing type or size")
+	}
+
+	objType := string(headerParts[0])
+	content := stream[nullIndex+1:]
+
+	return objType, content, nil
 }
