@@ -112,12 +112,60 @@ func Clone(repoURL, targetDir string) {
 		os.Exit(1)
 	}
 
+	resolvedObjects := make(map[string]plumbing.PackObject)
+	var deltas []plumbing.PackObject
+
 	for _, obj := range objects {
-		_, err := WriteObject(obj.Type, obj.Content)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error saving extracted object: %v\n", err)
+		if obj.Type == "ref_delta" {
+			deltas = append(deltas, obj)
+		} else {
+			sha, err := WriteObject(obj.Type, obj.Content)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error saving extracted object: %v\n", err)
+				os.Exit(1)
+			}
+			resolvedObjects[sha] = obj
+		}
+	}
+
+	for len(deltas) > 0 {
+		var unresolved []plumbing.PackObject
+		for _, delta := range deltas {
+			baseObj, ok := resolvedObjects[delta.BaseSha]
+			if !ok {
+				baseType, baseContent, err := ReadObject(delta.BaseSha)
+				if err == nil {
+					baseObj = plumbing.PackObject{Type: baseType, Content: baseContent}
+					ok = true
+				}
+			}
+
+			if ok {
+				resolvedContent, err := plumbing.ApplyDelta(baseObj.Content, delta.Content)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error applying delta: %v\n", err)
+					os.Exit(1)
+				}
+
+				sha, err := WriteObject(baseObj.Type, resolvedContent)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error saving resolved delta object: %v\n", err)
+					os.Exit(1)
+				}
+				resolvedObjects[sha] = plumbing.PackObject{
+					Type:    baseObj.Type,
+					Content: resolvedContent,
+				}
+			} else {
+				unresolved = append(unresolved, delta)
+			}
+		}
+
+		if len(unresolved) == len(deltas) {
+			fmt.Fprintf(os.Stderr, "Could not resolve %d remaining delta objects\n", len(unresolved))
 			os.Exit(1)
 		}
+		deltas = unresolved
 	}
 
 	_, commitContent, err := ReadObject(headSha)

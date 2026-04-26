@@ -11,6 +11,7 @@ import (
 type PackObject struct {
 	Type    string
 	Size    int
+	BaseSha string
 	Content []byte
 }
 
@@ -97,7 +98,111 @@ func parseObject(reader *bytes.Reader) (PackObject, error) {
 			Size:    int(size),
 			Content: content,
 		}, nil
+	} else if objTypeInt == 7 {
+		baseSha := make([]byte, 20)
+		if _, err := io.ReadFull(reader, baseSha); err != nil {
+			return PackObject{}, fmt.Errorf("error reading base sha: %w", err)
+		}
+
+		zlibReader, err := zlib.NewReader(reader)
+		if err != nil {
+			return PackObject{}, fmt.Errorf("error creating zlib reader: %w", err)
+		}
+		defer zlibReader.Close()
+
+		content, err := io.ReadAll(zlibReader)
+		if err != nil {
+			return PackObject{}, fmt.Errorf("error reading zlib stream: %w", err)
+		}
+
+		return PackObject{
+			Type:    objType,
+			Size:    int(size),
+			BaseSha: fmt.Sprintf("%x", baseSha),
+			Content: content,
+		}, nil
 	}
 
 	return PackObject{}, fmt.Errorf("delta objects (%s) parsing is not fully implemented yet", objType)
+}
+
+func ApplyDelta(baseContent, deltaData []byte) ([]byte, error) {
+	readSize := func(data []byte) (uint64, int) {
+		var size uint64
+		var shift uint
+		var i int
+		for {
+			b := data[i]
+			i++
+			size |= uint64(b&0x7f) << shift
+			shift += 7
+			if b&0x80 == 0 {
+				break
+			}
+		}
+		return size, i
+	}
+
+	_, idx1 := readSize(deltaData)
+	_, idx2 := readSize(deltaData[idx1:])
+	idx := idx1 + idx2
+
+	var target []byte
+
+	for idx < len(deltaData) {
+		cmd := deltaData[idx]
+		idx++
+
+		if cmd&0x80 != 0 {
+			var offset, size uint32
+
+			if cmd&0x01 != 0 {
+				offset |= uint32(deltaData[idx])
+				idx++
+			}
+			if cmd&0x02 != 0 {
+				offset |= uint32(deltaData[idx]) << 8
+				idx++
+			}
+			if cmd&0x04 != 0 {
+				offset |= uint32(deltaData[idx]) << 16
+				idx++
+			}
+			if cmd&0x08 != 0 {
+				offset |= uint32(deltaData[idx]) << 24
+				idx++
+			}
+
+			if cmd&0x10 != 0 {
+				size |= uint32(deltaData[idx])
+				idx++
+			}
+			if cmd&0x20 != 0 {
+				size |= uint32(deltaData[idx]) << 8
+				idx++
+			}
+			if cmd&0x40 != 0 {
+				size |= uint32(deltaData[idx]) << 16
+				idx++
+			}
+			if size == 0 {
+				size = 0x10000
+			}
+
+			if offset+size > uint32(len(baseContent)) {
+				return nil, fmt.Errorf("copy command out of bounds")
+			}
+			target = append(target, baseContent[offset:offset+size]...)
+		} else if cmd != 0 {
+			size := int(cmd)
+			if idx+size > len(deltaData) {
+				return nil, fmt.Errorf("insert command out of bounds")
+			}
+			target = append(target, deltaData[idx:idx+size]...)
+			idx += size
+		} else {
+			return nil, fmt.Errorf("delta command 0 is reserved")
+		}
+	}
+	return target, nil
 }
