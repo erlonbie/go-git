@@ -8,6 +8,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/codecrafters-io/git-starter-go/app/plumbing"
 )
 
 func Clone(repoURL, targetDir string) {
@@ -103,10 +105,18 @@ func Clone(repoURL, targetDir string) {
 
 	packfileContent := packData[packIndex:]
 
-	err = os.MkdirAll(".git/objects/pack", 0755)
-	if err := os.WriteFile(".git/objects/pack/downloaded.pack", packfileContent, 0644); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving packfile to disk: %v\n", err)
+	objects, err := plumbing.ParsePackfile(packfileContent)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error parsing packfile: %v\n", err)
 		os.Exit(1)
+	}
+
+	for _, obj := range objects {
+		_, err := WriteObject(obj.Type, obj.Content)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error saving extracted object: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }
 
