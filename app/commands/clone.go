@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -118,6 +119,79 @@ func Clone(repoURL, targetDir string) {
 			os.Exit(1)
 		}
 	}
+
+	_, commitContent, err := ReadObject(headSha)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading HEAD commit: %v\n", err)
+		os.Exit(1)
+	}
+
+	commitParts := strings.SplitN(string(commitContent), "\n", 2)
+	treeSha := strings.TrimPrefix(commitParts[0], "tree ")
+
+	if err := checkoutTree(treeSha, "."); err != nil {
+		fmt.Fprintf(os.Stderr, "Error checking out tree: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func checkoutTree(treeSha, currentPath string) error {
+	_, treeContent, err := ReadObject(treeSha)
+	if err != nil {
+		return fmt.Errorf("error reading tree %s: %w", treeSha, err)
+	}
+
+	i := 0
+	for i < len(treeContent) {
+		spaceIndex := bytes.IndexByte(treeContent[i:], ' ')
+		if spaceIndex == -1 {
+			break
+		}
+		spaceIndex += i
+
+		mode := string(treeContent[i:spaceIndex])
+		i = spaceIndex + 1
+
+		nullIndex := bytes.IndexByte(treeContent[i:], 0)
+		if nullIndex == -1 {
+			break
+		}
+		nullIndex += i
+
+		name := string(treeContent[i:nullIndex])
+		i = nullIndex + 1
+
+		shaBytes := treeContent[i : i+20]
+		i += 20
+
+		shaHex := fmt.Sprintf("%x", shaBytes)
+		fullPath := filepath.Join(currentPath, name)
+
+		if mode == "40000" {
+			if err := os.MkdirAll(fullPath, 0755); err != nil {
+				return err
+			}
+			if err := checkoutTree(shaHex, fullPath); err != nil {
+				return err
+			}
+		} else {
+			_, fileContent, err := ReadObject(shaHex)
+			if err != nil {
+				return err
+			}
+			
+			perm := os.FileMode(0644)
+			if mode == "100755" {
+				perm = 0755
+			}
+			
+			if err := os.WriteFile(fullPath, fileContent, perm); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }
 
 func parsePktLines(data []byte) []string {
